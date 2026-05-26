@@ -1,0 +1,67 @@
+name: Build Biathlon Simple EXE
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          arch: 'win64_mingw81'
+      
+      - name: Build Biathlon Application
+        shell: cmd
+        run: |
+          echo "Building Biathlon Simulator..."
+          qmake Biathlon.pro
+          mingw32-make -j4
+          echo "Build complete!"
+          if exist release\Biathlon.exe echo "EXE created: release\Biathlon.exe"
+          if exist Biathlon.exe echo "EXE created: Biathlon.exe"
+          dir /s *.exe
+      
+      - name: Run windeployqt
+        shell: cmd
+        run: |
+          if exist release\Biathlon.exe (
+            windeployqt release\Biathlon.exe --no-quick-import --no-angle --no-opengl-sw
+            echo "Deployed to release/"
+          ) else if exist Biathlon.exe (
+            windeployqt Biathlon.exe --no-quick-import --no-angle --no-opengl-sw
+            echo "Deployed to current directory"
+          )
+      
+      - name: Prepare portable folder
+        shell: cmd
+        run: |
+          mkdir BiathlonApp
+          
+          if exist release\Biathlon.exe (
+            copy release\Biathlon.exe BiathlonApp\
+            copy release\*.dll BiathlonApp\ 2>nul
+          ) else if exist Biathlon.exe (
+            copy Biathlon.exe BiathlonApp\
+          )
+          
+          mkdir BiathlonApp\platforms
+          if exist C:\Qt\5.15.2\mingw81_64\plugins\platforms\qwindows.dll (
+            copy C:\Qt\5.15.2\mingw81_64\plugins\platforms\qwindows.dll BiathlonApp\platforms\
+          )
+          
+          echo Biathlon Simulator > BiathlonApp\run.bat
+          echo start Biathlon.exe >> BiathlonApp\run.bat
+          
+          echo Portable folder created
+          dir BiathlonApp
+      
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Biathlon-Simulator
+          path: BiathlonApp/

@@ -1,0 +1,151 @@
+name: Build Biathlon Windows EXE
+
+on: [push, workflow_dispatch]
+
+jobs:
+  build:
+    runs-on: windows-latest
+    
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '5.15.2'
+          arch: 'win64_mingw81'
+      
+      - name: Build Biathlon
+        shell: bash
+        run: |
+          # Проверяем наличие файлов
+          echo "=== Checking files ==="
+          ls -la
+          
+          # Собираем проект
+          qmake Biathlon.pro
+          mingw32-make -j4
+          
+          # Проверяем результат сборки
+          echo "=== Build results ==="
+          ls -la release/ 2>/dev/null || ls -la
+          
+          # Находим exe файл
+          if [ -f "release/Biathlon.exe" ]; then
+            echo "Build successful: release/Biathlon.exe"
+          elif [ -f "Biathlon.exe" ]; then
+            echo "Build successful: Biathlon.exe"
+          else
+            echo "Searching for exe..."
+            find . -name "*.exe" 2>/dev/null
+          fi
+      
+      - name: Deploy with windeployqt
+        shell: bash
+        run: |
+          # Находим exe файл
+          EXE_PATH=""
+          if [ -f "release/Biathlon.exe" ]; then
+            EXE_PATH="release/Biathlon.exe"
+          elif [ -f "Biathlon.exe" ]; then
+            EXE_PATH="Biathlon.exe"
+          fi
+          
+          if [ -n "$EXE_PATH" ]; then
+            # Запускаем windeployqt
+            windeployqt $EXE_PATH --no-quick-import --no-angle --no-opengl-sw
+            echo "Deployed Qt dependencies"
+          else
+            echo "EXE not found!"
+            exit 1
+          fi
+      
+      - name: Create portable package
+        shell: bash
+        run: |
+          # Создаем папку для портативной версии
+          mkdir -p Biathlon-Portable/platforms
+          mkdir -p Biathlon-Portable/styles
+          mkdir -p Biathlon-Portable/imageformats
+          
+          # Находим и копируем exe
+          if [ -f "release/Biathlon.exe" ]; then
+            cp release/Biathlon.exe Biathlon-Portable/
+          elif [ -f "Biathlon.exe" ]; then
+            cp Biathlon.exe Biathlon-Portable/
+          fi
+          
+          # Копируем DLL из папки release (если есть)
+          if [ -d "release" ]; then
+            cp release/*.dll Biathlon-Portable/ 2>/dev/null || true
+          fi
+          
+          # Копируем необходимые DLL из Qt и MinGW
+          echo "Copying Qt DLLs..."
+          if [ -d "C:/Qt/5.15.2/mingw81_64/bin" ]; then
+            cp C:/Qt/5.15.2/mingw81_64/bin/Qt5Core.dll Biathlon-Portable/ 2>/dev/null || true
+            cp C:/Qt/5.15.2/mingw81_64/bin/Qt5Gui.dll Biathlon-Portable/ 2>/dev/null || true
+            cp C:/Qt/5.15.2/mingw81_64/bin/Qt5Widgets.dll Biathlon-Portable/ 2>/dev/null || true
+          fi
+          
+          # Копируем MinGW DLL
+          if [ -d "C:/Qt/Tools/mingw810_64/bin" ]; then
+            cp C:/Qt/Tools/mingw810_64/bin/libgcc_s_seh-1.dll Biathlon-Portable/ 2>/dev/null || true
+            cp C:/Qt/Tools/mingw810_64/bin/libstdc++-6.dll Biathlon-Portable/ 2>/dev/null || true
+            cp C:/Qt/Tools/mingw810_64/bin/libwinpthread-1.dll Biathlon-Portable/ 2>/dev/null || true
+          fi
+          
+          # Копируем плагины
+          if [ -d "C:/Qt/5.15.2/mingw81_64/plugins/platforms" ]; then
+            cp C:/Qt/5.15.2/mingw81_64/plugins/platforms/qwindows.dll Biathlon-Portable/platforms/ 2>/dev/null || true
+          fi
+          
+          if [ -d "C:/Qt/5.15.2/mingw81_64/plugins/styles" ]; then
+            cp C:/Qt/5.15.2/mingw81_64/plugins/styles/qwindowsvistastyle.dll Biathlon-Portable/styles/ 2>/dev/null || true
+          fi
+          
+          # Показываем содержимое
+          echo "=== Portable package contents ==="
+          ls -la Biathlon-Portable/
+          ls -la Biathlon-Portable/platforms/ 2>/dev/null || echo "No platforms folder"
+          
+          # Создаем README
+          cat > Biathlon-Portable/README.txt << 'EOF'
+          ========================================
+          BIATHLON SIMULATOR - Portable Version
+          ========================================
+          
+          Для запуска просто запустите Biathlon.exe
+          
+          Функции приложения:
+          - Выбор дисциплины (Спринт, Преследование, Индивидуальная, Масс-старт)
+          - Жеребьёвка стартовых номеров
+          - Симуляция гонки с учетом:
+            * Скорости бега спортсменов
+            * Точности стрельбы
+            * Выносливости
+            * Утомления по ходу гонки
+          - Таблица результатов
+          - Профиль спортсмена с детальной информацией
+          
+          Спортсмены в игре:
+          - Йоханнес Бё (Норвегия)
+          - Стурла Холм Лагрейд (Норвегия)
+          - Кентен Фийон Майе (Франция)
+          - Эмильен Жакелен (Франция)
+          - Себастьян Самуэльссон (Швеция)
+          - Мартин Понсилуома (Швеция)
+          - Тарьей Бё (Норвегия)
+          - Ветле Ш. Кристиансен (Норвегия)
+          - Бенедикт Долль (Германия)
+          - Владимир Илиев (Болгария)
+          - Дмитрий Пидручный (Украина)
+          - Антонен Гигонна (Франция)
+          
+          EOF
+      
+      - name: Upload portable package
+        uses: actions/upload-artifact@v4
+        with:
+          name: Biathlon-Portable
+          path: Biathlon-Portable/
